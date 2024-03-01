@@ -1,0 +1,569 @@
+---
+title: "Project 2"
+author: "Julian Canales"
+date: "2022-10-21"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Project 2: Analyzing Business Pricing Against Inflation Rate: Data Analysis
+
+### Julian Canales - jac22779
+
+## Introduction
+
+I chose data sets that are very unique to me (and my family!) because it they are actually the food items that our family business sells. They use a software service called 'Clover' that tracks their locations transactions. I consulted with my step-dad as to which location I should use, since we could not aggregate the information. He gave me the best location, in his opinion, and I complied. I then had to request the reports to be made for us. The service had issues retrieving information from before 2021, so I got data from 2021 and 2022. Clover sent me transaction summaries for both years. It included a lot of information but I am really only interested in a few variables. I then retrieved the information for the "Average Retail Prices for Urban Cities" off the U.S. Bureau of Labor Statistics website. I will be referring to this as food CPI to reduce length. Here is the source: <https://www.bls.gov/regions/mid-atlantic/data/averageretailfoodandenergyprices_usandwest_table.htm>. This is interesting to me because this is real information that affects my life (even though indirectly) since my parent's make income from these businesses. If inflation is detrimentally affecting their margins, it would be useful to know.
+
+Each transaction summary data set generated from Clover has food items alongside their corresponding information as an observation. The only variables I am interested in are the 'name' and 'avg item size.' The food CPI data also has food items listed as an observation with their corresponding average price in urban cities for a given year and month. I am interested in both the 'name' and 'average price in x year.' I will also need to make a categorical variable that takes the main ingredient from each food item and assigns it into a category. The category will be restricted to meats. This category will be a key. I will then go into the CPI data set and create a new category variable for each food item in the same manner. I will then create a new data frame, 'agg_CPI,' that takes the summary statistics and aggregate average the averages of all the prices that fall in a given food category. This might sound tedious but it is the only work around I could think of to the fact that there are several averages pertaining to a given meat depending on the type. I will join the two business transactions data sets on the 'name.' Call this 'compiled transactions.' Finally, I will then do a left join, with 'compiled transactions' on the left and 'agg_CPI' on the right. We will then have 'name' as char, 'avg price in 2021' as num, 'avg price in 2022' as num, 'main ingredient' as categorical, 'avg CPI price in 2021' as num, and 'avg CPI price in 2022.'
+
+I expect the inflation to be increasing at a higher rate than the the prices of food items sold at the business. I also suspect for there to be varying ratios of the differentials grouped by main ingredient. 
+
+Furthermore, there are two research questions I hope to tackle. First, which observations are most similar to each other in regards to ratio, difference in food price from September 2021 and September 2022, and difference in CPI food price from 2021 and 2022? Second, can we predict the main food ingredient based on the same three variables? Let's find out.
+
+```{r message=FALSE}
+# Call tidyr, dplyr and ggplot2 packages within tidyverse
+library(tidyverse)
+#  Call readr so R can read our data sets
+library(readr)
+```
+
+```{r message=FALSE}
+# assigns variable names to the read csv files (creating data frames)
+CPI_food <- read_csv("2022_CPI_food.csv")
+BusinessTransactions2022 <- read_csv("BusinessTransactions2022.csv")
+BusinessTransactions2021 <- read_csv("BUsinessTransactionsSummary2021.csv")
+```
+
+## Exploratory Data Analysis
+
+All data frames are already Tidy. 
+
+First, we have that BusinessTransactions2022 has 198 observations and Name as an ID. BusinessTransaction 2021 has 201 observations and Name as an ID. CPI_food has 104 observations and Name as an ID. I will select the variables of interest from the data frames and omit all NAs.
+
+```{r}
+# selects variables of interest and removes NAs from transactions data sets
+BT2021 <- 
+  BusinessTransactions2021 %>%
+  select("Name", "Avg Item Size") %>%
+  na.omit()
+
+BT2021
+
+BT2022 <- 
+  BusinessTransactions2022 %>%
+  select("Name", "Avg Item Size") %>%
+  na.omit()
+
+BT2022
+
+CPI_food <- 
+  CPI_food %>%
+  select("Food Item", "September 2021 Price", 
+         "September 2022 Price") %>%
+  na.omit()
+
+CPI_food
+
+
+```
+
+Now I will create a categorical variables as described in the introduction. This will be done to all data sets so that we can join them, it will serve as the key 
+
+```{r}
+# creates a categorical variable for all data frames
+
+#I accomplish these categorical variables by using the typical 'as.factor' function and nest in code that reads through the names of the given data frame for key words that indicates it belongs to a category. I make use of the 'grepl' function which makes this easier by matching characters. I repeat this for all data frames. I then omit all the NAs from the data set as we are not interested in those. 
+
+BT2021$Ingredient <- as.factor(ifelse(grepl("Chicken",BT2021$Name) |
+                                        grepl("chicken",BT2021$Name),
+                                      'Chicken',
+                     ifelse(grepl("Beef",BT2021$Name) | 
+                              grepl("beef",BT2021$Name) |
+                              grepl("Barbacoa",BT2021$Name),
+                            'Beef',
+                     ifelse(grepl("Bacon",BT2021$Name)
+                            | grepl("Pork",BT2021$Name) |
+                              grepl("pork",BT2021$Name) |
+                              grepl("pastor",BT2021$Name) |
+                              grepl("Chicharron",BT2021$Name),
+                            'Pork',
+                     ifelse(grepl("Ham",BT2021$Name), 'Ham',
+                     ifelse(grepl("Eggs",BT2021$Name) |
+                              grepl("eggs",BT2021$Name) |
+                              grepl("EGGS",BT2021$Name), 
+                            'Eggs', NA))))))
+
+BT2022$Ingredient <- as.factor(ifelse(grepl("Chicken",BT2022$Name) |
+                                      grepl("chicken",BT2022$Name), 
+                                    'Chicken',
+                     ifelse(grepl("Beef",BT2022$Name) | 
+                              grepl("beef",BT2022$Name) |
+                              grepl("Barbacoa",BT2022$Name),
+                            'Beef',
+                     ifelse(grepl("Bacon",BT2022$Name)
+                            | grepl("Pork",BT2022$Name) |
+                              grepl("pork",BT2022$Name) |
+                              grepl("pastor",BT2022$Name) |
+                              grepl("Chicharron",BT2022$Name), 'Pork',
+                     ifelse(grepl("Ham",BT2022$Name), 'Ham',
+                     ifelse(grepl("Eggs",BT2022$Name) |
+                              grepl("eggs",BT2022$Name) |
+                              grepl("EGGS",BT2022$Name), 
+                            'Eggs', NA))))))
+BT2022 <-
+  BT2022 %>%
+  na.omit()
+
+CPI_food <- 
+  CPI_food %>%
+  rename(Name = `Food Item`)
+
+CPI_food$Ingredient <- as.factor(ifelse(grepl("Chicken",CPI_food$Name) |
+                                      grepl("chicken",CPI_food$Name), 
+                                    'Chicken',
+                     ifelse(grepl("Beef",CPI_food$Name) | 
+                              grepl("beef",CPI_food$Name) |
+                              grepl("Barbacoa",CPI_food$Name),
+                            'Beef',
+                     ifelse(grepl("Bacon",CPI_food$Name)
+                            | grepl("Pork",CPI_food$Name) |
+                              grepl("pork",CPI_food$Name) |
+                              grepl("pastor",CPI_food$Name) |
+                              grepl("Chicharron",CPI_food$Name), 'Pork',
+                     ifelse(grepl("Ham",CPI_food$Name), 'Ham',
+                     ifelse(grepl("Eggs",CPI_food$Name) |
+                              grepl("eggs",CPI_food$Name) |
+                              grepl("EGGS",CPI_food$Name), 
+                            'Eggs', NA))))))
+BT2021 <-
+  BT2021 %>%
+  na.omit()
+
+BT2022 <-
+  BT2022 %>%
+  na.omit()
+
+CPI_food <-
+  CPI_food %>%
+  na.omit()
+
+BT2021
+BT2022
+CPI_food
+```
+
+We must now summarize the data in the CPI data frame. 
+
+```{r}
+CPI_food_new <- CPI_food %>%
+  # groups data by Ingredient
+  group_by(Ingredient) %>%
+  # summarizes the mean of each year by Ingredient
+  summarize(Sept2021AvgPrice = mean(`September 2021 Price`),
+            Sept2022AvgPrice = mean(`September 2022 Price`))
+CPI_food_new
+
+```
+
+I can now merge our data frames into one. I will call it 'PriceAnalysis.' But before we can do that, we must first merge our transactions data set
+
+```{r}
+# merges our two transaction data frames
+mergedTransactions <- 
+  inner_join(BT2021, BT2022, by = "Name")
+
+mergedTransactions <- 
+  mergedTransactions %>%
+  # selects desired variables
+  select("Name", "Avg Item Size.x", 
+         "Avg Item Size.y", "Ingredient.x") %>%
+  # gives them a better name
+  rename(Ingredient = Ingredient.x, AvgItemPriceIn2021 = "Avg Item Size.x", AvgItemPriceIn2022 = "Avg Item Size.y")
+
+PriceAnalysis <-
+  left_join(mergedTransactions, CPI_food_new, by = "Ingredient")
+
+
+PriceAnalysis <- PriceAnalysis %>%
+  separate(AvgItemPriceIn2021, into= c("$", "AvgItemPrice2021"), 
+           sep = 1) %>%
+  select(!"$") %>%
+  separate(AvgItemPriceIn2022, into= c("$", "AvgItemPrice2022"), 
+           sep = 1) %>%
+  select(!"$")
+
+PriceAnalysis$AvgItemPrice2021 <- as.numeric(as.character(PriceAnalysis$AvgItemPrice2021)) 
+
+PriceAnalysis$AvgItemPrice2022 <- as.numeric(as.character(PriceAnalysis$AvgItemPrice2022)) 
+
+PriceAnalysis
+
+
+```
+We have 69 observations, 'Name' as a unique ID, 
+
+Now we must create summary statistics for 2 numerical variables and 1 categorical variable. Luckily, we have already created a categorical variable. We will first do the differential of "AvgItemPricein2021" and "AvgItemPricein2022" and the differential of "Sept2021AvgPrice" and "Sept2022AvgPrice" for all data. 
+
+```{r}
+# finds the differentials using mutate
+PriceAnalysis <- PriceAnalysis %>%
+  mutate(DiffItemPrice = AvgItemPrice2022 - AvgItemPrice2021) %>%
+  mutate(DiffSeptPrice = Sept2022AvgPrice - Sept2021AvgPrice)
+PriceAnalysis
+```
+Now we can find the ratio between the differentials. We will do DiffItemPrice / DiffSeptPrice to indicate that a number greater than 1 is good and a number less than 0 is not good.
+```{r}
+# finds the ratio using mutate
+PriceAnalysis <- PriceAnalysis %>%
+  mutate(ratio = DiffItemPrice / DiffSeptPrice)
+PriceAnalysis
+```
+We can now do a summary statistic of the range of ratios by ingredient. 
+```{r}
+# finds the range of ratios using group_by and summarize
+PriceAnalysis %>%
+  group_by(Ingredient) %>%
+  summarize(range = max(ratio) - min(ratio))
+```
+This number seems very high, so I looked through the data and found that it was an outlier. I will go ahead and remove it to get a better measure. 
+```{r}
+# takes away outlier
+PriceAnalysis %>%
+  group_by(Ingredient) %>%
+  filter(ratio < 20) %>%
+  summarize(range = max(ratio) - min(ratio))
+```
+This seems a bit more reasonable. This tells us that beef and pork are both the big movers in terms of price fluctuation. Now we can find the mean of the ratios for each ingredient. This will tell us how each meat is impacting business due to inflation
+```{r}
+# finds the means of ratio by Ingredient and sorts
+PriceAnalysis %>%
+  group_by(Ingredient) %>%
+  summarize(meanOfRatios = mean(ratio)) %>%
+  arrange(meanOfRatios)
+```
+It appears that my parents have gained significant margins on beef and park products due to increasing their prices due to inflation. However, they have no reacted to changing the prices of eggs or ham at all. That may indicate that they could increase prices to combat inflation. Chicken as well, to a lesser extent. 
+
+Now let's look at a categorical variable. What is the most and least popular meat in regards to their frequency in the menu? 
+```{r}
+# finds the appearances of Ingredients in menu
+PriceAnalysis %>%
+  group_by(Ingredient) %>%
+  summarize(NumberOfItems = n()) %>%
+  arrange(NumberOfItems)
+```
+Chicken is the most popular with 20 appearances in the menu while ham is the least popular with 5 appearances. This is interesting. Combining this with the last piece of information, which was that my parents have the best margins with beef and pork in response to inflation, it would be advantageous for pork and beef to appear the most. Yet, chicken is the most popular meat in the menu. 
+
+I want to share some of these findings with my parents. The easiest way to communicate information is through graphs. Let's create a histogram  that shows the frequency of ratios. 
+```{r}
+PriceAnalysis %>%
+  # takes away outlier
+  filter(ratio < 20) %>%
+  ggplot(aes(ratio)) +
+  # changes bin so that it fits
+  geom_histogram(bins = 5) +
+  theme_classic() +
+  ggtitle("Histogram of Ratio") +
+  # centers title
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x ="Ratio", y ="Frequency") +
+  ylim(0, 60) # modify default scales
+```
+
+
+This graph tells us that most of the ratios are around 0 and a few are around 2.5. So there are plenty of food items that can be adjusted to help with inflation!
+
+
+Now let's say I want to show my parents the ratios of all the Ingredients as well as the mean and inner-quartile range of the ratios. We can construct a box plot!
+```{r}
+PriceAnalysis %>%
+  # takes away outlier
+  filter(ratio < 20) %>%
+  # sets x and y variable
+  ggplot(aes(x = Ingredient, y = ratio)) +
+  geom_boxplot() +
+  # sets parameters for graph
+  geom_point(color="black", size=0.4, alpha=0.9) +
+  theme_bw() +
+  xlab("Ingredient") + 
+  ylab("Ratio") +
+  ggtitle("Boxplot of Ratio by Ingredient") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  ylim(-1, 10) # modify scales
+```
+
+
+This tells us that beef and pork have the highest mean ratios, so adding more beef and pork items could improve overall margins. Also, since chicken is so popular, getting the mean ratio of the chicken to at least 1 would be ideal.
+
+But what if we want to know which food item has the best ratio as well as consider Ingredient? We can make a bar graph of 'Name' and 'ratio' and add in a third variable that colors the bars by 'Ingredient.'
+```{r}
+PriceAnalysis %>%
+  select(Name, ratio, Ingredient) %>%
+  arrange(ratio) %>%
+  # makes sure to order the data using reorder and fills by ingredient
+  ggplot(aes(x = reorder(Name, -ratio), y = ratio, fill = Ingredient)) +
+  geom_bar(stat = "identity") +
+  # this makes it easier to read
+  coord_flip()+
+  # changes theme
+  theme_grey(base_size = 5) +
+  xlab("Name") +
+  ylab("Ratio") +
+  ggtitle("Bar Graph of Food Item's Ratio") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+
+This tells us a lot. The food that is at 0 ratio could all theoretically be increased in price. We could also bring the items with high ratios a bit lower. This could potentially entice customers to buy larger variety from the menu as well. And if all the items are optimized, then no matter what they buy, the margins are good. 
+
+We will now construct a correlation matrix. 
+
+```{r}
+# Find the correlations among the 10 disciplines
+PriceAnalysis %>%
+  select(-Name,-Ingredient) %>%
+  cor(use = "pairwise.complete.obs") %>%
+  # Save as a data frame
+  as.data.frame %>%
+  # Convert row names to an explicit variable
+  rownames_to_column %>%
+  # Pivot so that all correlations appear in the same column
+  pivot_longer(-1, 
+               names_to = "other_var", 
+               values_to = "correlation") %>%
+  # Define ggplot (reorder values on y-axis)
+  ggplot(aes(x = rowname, 
+             y = ordered(other_var, levels = rev(sort(unique(other_var)))),
+             fill = correlation)) +
+  # Heat map with geom_tile
+  geom_tile() +
+  # Change the scale to make the middle appear neutral
+  scale_fill_gradient2(low = "red", mid = "white", high = "blue") +
+  # Overlay values
+  geom_text(aes(label = round(correlation,2)), color = "black", size = 4) +
+  # Angle the x-axis label to 45 degrees
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  # Give title and labels
+  labs(title = "Correlation matrix for the dataset PriceAnalysis", 
+       x = "variable 1", y = "variable 2")
+```
+
+The correlation matrix reveals that the variables with the strongest correlations are 'DiffItemPrice' and 'ratio' with a strong positive correlation and 'DiffSeptPrice' and 'Sept2021AvgPrice' with a strong negative correlation. The variables with the weakest correlation are'DiffItemPrice' with both 'Sept2021AvgPrice' and 'Sept2022AvgPrice.' Both of these makes sense as some of my variables are functions of others. Unsurprisingly, the variables that are dependent on others have a higher correlation with that respective variable. These correlations are not that interesting for that reason. 
+
+## Clustering 
+
+In this section, we will perform PAM (Partition Around Medoids) clustering on 'DiffItemPrice', 'DiffSeptPrice', and 'ratio' to explore observations that cluster. We will first load the proper libraries. 
+
+```{r}
+# load libraries for clustering 
+library(factoextra)
+library(cluster)
+```
+
+We will first scale our data and determine the optimal number of clusters.
+
+```{r}
+PriceAnalysis_scaled <- PriceAnalysis %>%
+  select(DiffItemPrice, DiffSeptPrice, ratio) %>% #keep 3 variables
+  drop_na() %>% #drop NAs
+  scale #scale data
+
+# produces line graph that contains where cluster number is maximized
+fviz_nbclust(PriceAnalysis_scaled, pam, method = "silhouette")
+```
+
+We find that the the optimal clusters to perform PAM clustering is seven. We can now proceed with the model.
+
+```{r}
+# apply PAM clustering with the 3 already determined variables 
+pam_results <- PriceAnalysis_scaled %>%
+  pam(k=7)
+
+# save cluster assignments as a column in our DF
+PriceAnalysis_pam <- PriceAnalysis %>%
+  mutate(cluster = as.factor(pam_results$clustering))
+
+# make cluster scatterplot
+fviz_cluster(pam_results, data = PriceAnalysis_scaled)
+```
+
+In order to interpret the clusters in terms of the original variables and observations, we will perform some statistical analysis. 
+
+
+```{r}
+PriceAnalysis_pam %>%
+  group_by(cluster) %>% #groups data by the new column, cluster
+  summarize_if(is.numeric, mean, na.rm = T) %>% #finds mean if variable type is numeric
+  select(cluster, DiffItemPrice, DiffSeptPrice, ratio)
+
+```
+This data frame tells us the mean for each variable for all 7 of our clusters. Notice that cluster 7 is the same as observation 53 from our data set. We could (but will not, as it is not necessary) have taken away this outlier and have gotten six clusters instead of seven. We can also deduce that these means are the centers for our clusters. We can also tell that clusters 3,4, and 5 had the lowest ratios, meaning that the food items among these clusters did not respond to inflation very well. However, clusters 1, 2, and 6 had the highest ratios, so the food items among these 3 clusters did respond well to inflation. Cluster 7 only includes one point so we do not gain any insightful information from its presence. We will now calculate the average silhouette width. 
+
+```{r}
+pam_results$silinfo$avg.width
+```
+
+The average silhouette width for the data in pam_results is 0.7070273, which indicates a moderately strong clustering quality. This agrees with our fviz_nbclust graph. 
+
+## Dimensionality Reduction
+
+But further analysis can be done by performing dimensionality reduction. We will now do PCA (Principal Component Analysis) on the 'PriceAnalysis_scaled' data frame we created in the previous section. 
+
+```{r}
+pca <- PriceAnalysis_scaled %>%
+  prcomp
+
+pca
+```
+
+From this, we can deduce that PC1 has a moderate negative correlation with 'DiffItemPrice' and 'ratio' and a weak positive correlation with 'DiffSeptPrice.' PC2 has a weak positive correlation with 'DiffItemPrice' and 'ratio,' but a very strong positive correlation with 'DiffSeptPrice.' Let's now visualize the observations using the first two PCs and discuss the variation explained by them.
+
+```{r}
+# Visualize the individuals according to PC1 and PC2
+fviz_pca_ind(pca, 
+             repel = TRUE)
+
+# Visualize percentage of variance explained for each PC in a scree plot
+fviz_eig(pca, addlabels = TRUE, ylim = c(0, 100))
+```
+
+As can be seen by the Scree plot, 97.9% of the variation from the data can be explained by the first 2 PCs, which is good. 
+
+## Classification & Cross-Validation
+
+We will first load additional libraries 
+
+```{r}
+# loads library so we can make ROC curve later on
+library(plotROC)
+```
+
+Now we must create a binary variable; this variable will tell is if the food item beat inflation. 
+
+```{r}
+# adds a binary variable
+PriceAnalysis <- PriceAnalysis %>%
+  mutate("IsChicken" = ifelse(Ingredient == "Chicken", 1, 0))
+```
+
+A logistic classification model will be used. Let's build the model.
+
+```{r}
+# creates our logistic model
+PriceAnalysis_log <- glm(IsChicken ~ DiffItemPrice + DiffSeptPrice + ratio, data = PriceAnalysis, family = "binomial")
+
+# summarizes our model
+summary(PriceAnalysis_log)
+```
+
+Let's add predictions to our dataset and look into the accuracy of the model.
+
+```{r}
+# adds predictions to our data set
+PriceAnalysis_pred <- PriceAnalysis %>%
+  drop_na %>% # eliminates NAs
+  mutate(predictions = predict(PriceAnalysis_log, type = "response"),
+         predicted = ifelse(predictions > 0.5, 1, 0))
+
+# create a confusion table to determine accuracy 
+table(PriceAnalysis_pred$IsChicken, PriceAnalysis_pred$predicted) %>%
+  addmargins 
+
+# accuracy 
+(47 + 10) / 69
+
+```
+
+We can check how well this model works with a ROC curve. 
+
+```{r}
+# builds a ROC curve from our model
+ROC_log <- ggplot(PriceAnalysis_pred) + 
+  geom_roc(aes(d = IsChicken, m = predictions)) +
+  labs(title = "ROC curve for logistic regression")
+
+ROC_log
+```
+
+The area under the ROC's curve also tells us how accurate the model is. 
+
+```{r}
+# calculate the AUC
+calc_auc(ROC_log)$AUC
+```
+
+We can now perform cross validation. Before we can do this, outliers will be taken away from the dataset. Otherwise, annoying errors would arise later on in the cross-validation section.
+
+```{r}
+# eliminates outliers 
+PriceAnalysis <- PriceAnalysis %>%
+  filter(ratio < 5)
+```
+
+Now we create different folds. 
+
+```{r}
+# Choose number of folds
+k = 10 
+
+# Randomly order rows in the dataset
+data <- PriceAnalysis[sample(nrow(PriceAnalysis)), ]
+
+# Create k folds from the dataset
+folds <- cut(seq(1:nrow(data)), breaks = k, labels = FALSE)
+```
+
+
+Then we fit a logistic regression model and repeat the process for each 𝑘-fold:
+
+```{r}
+# Initialize a vector to keep track of the performance
+perf_k <- NULL
+
+# Use a for loop to get diagnostics for each test set
+for(i in 1:k){
+  # Create train and test sets
+  train <- data[folds != i, ] # all observations except in fold i
+  test <- data[folds == i, ]  # observations in fold i
+  
+  # Train model on train set (all but fold i)
+  Price_log <- glm(IsChicken ~ DiffItemPrice + DiffSeptPrice + ratio, data = train,
+                   family = "binomial")
+  
+  # Test model on test set (fold i)
+  df <- data.frame(
+    predictions = predict(Price_log, newdata = test, type = "response"),
+    IsChicken = test$IsChicken)
+  
+  # Consider the ROC curve for the test dataset
+  ROC <- ggplot(df) + 
+    geom_roc(aes(d = IsChicken, m = predictions))
+
+  # Get diagnostics for fold i (AUC)
+  perf_k[i] <- calc_auc(ROC)$AUC
+}
+```
+
+Finally, we can find the average performance on new data:
+
+```{r}
+# Average performance 
+mean(perf_k)
+
+```
+
+Based on these results, there is no sign of overfitting. When the model was run on all the data and used to predict all observations, the performance was 0.826 according to the confusion table and .768 according to the area under the ROC curve. When we cross-validated these results, the performance was similar. Hence, our model does a sufficient job at predicting new observations; but I reckon a better model could be made with a higher accuracy rate. 
+
+```{r, echo=F}
+## DO NOT DELETE THIS BLOCK!
+Sys.info()
+```
+
+
+
